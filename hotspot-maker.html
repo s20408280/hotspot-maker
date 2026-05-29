@@ -1,0 +1,725 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Banner 熱區產生器</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Noto+Sans+TC:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0e0e0f;
+    --surface: #18181a;
+    --surface2: #222226;
+    --border: #2e2e33;
+    --accent: #f97316;
+    --accent-dim: rgba(249,115,22,0.15);
+    --text: #f0ede8;
+    --text-muted: #7a7a82;
+    --mono: 'Space Mono', monospace;
+    --sans: 'Noto Sans TC', sans-serif;
+    --radius: 6px;
+  }
+
+  html, body {
+    height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 14px;
+    line-height: 1.6;
+  }
+
+  /* LAYOUT */
+  .app {
+    display: grid;
+    grid-template-rows: auto 1fr;
+    min-height: 100vh;
+  }
+
+  header {
+    padding: 18px 32px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    background: var(--surface);
+  }
+
+  .logo {
+    font-family: var(--mono);
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--accent);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  .logo-sub {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-muted);
+    letter-spacing: 0.04em;
+  }
+
+  .divider-v {
+    width: 1px;
+    height: 28px;
+    background: var(--border);
+  }
+
+  .main {
+    display: grid;
+    grid-template-columns: 1fr 360px;
+    height: calc(100vh - 57px);
+    overflow: hidden;
+  }
+
+  /* LEFT — canvas area */
+  .canvas-panel {
+    padding: 24px;
+    overflow: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .toolbar {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
+  .btn {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    padding: 7px 14px;
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text);
+    cursor: pointer;
+    transition: background 0.12s, border-color 0.12s, color 0.12s;
+    white-space: nowrap;
+  }
+  .btn:hover { background: var(--surface2); border-color: #3e3e46; }
+  .btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn.ghost { background: transparent; }
+  .btn-icon { display: inline-flex; align-items: center; gap: 6px; }
+
+  .drop-zone {
+    border: 1.5px dashed var(--border);
+    border-radius: 8px;
+    padding: 60px 32px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    min-height: 280px;
+  }
+  .drop-zone:hover, .drop-zone.drag-over {
+    border-color: var(--accent);
+    background: var(--accent-dim);
+  }
+  .drop-zone svg { color: var(--text-muted); }
+  .drop-zone-title {
+    font-size: 15px;
+    font-weight: 500;
+    color: var(--text);
+  }
+  .drop-zone-sub { color: var(--text-muted); font-size: 13px; }
+
+  .canvas-wrap {
+    position: relative;
+    display: none;
+    line-height: 0;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    background: #111;
+    align-self: flex-start;
+  }
+  .canvas-wrap img { display: block; width: 100%; max-width: 100%; pointer-events: none; }
+
+  #draw-area {
+    position: absolute;
+    inset: 0;
+    cursor: crosshair;
+  }
+
+  .hotspot {
+    position: absolute;
+    border: 1.5px dashed var(--accent);
+    background: var(--accent-dim);
+    display: flex;
+    align-items: flex-start;
+    justify-content: flex-start;
+  }
+  .hotspot-num {
+    font-family: var(--mono);
+    font-size: 10px;
+    background: var(--accent);
+    color: #fff;
+    padding: 1px 5px;
+    border-radius: 0 0 3px 0;
+    line-height: 1.6;
+    pointer-events: none;
+    flex-shrink: 0;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .del-btn {
+    position: absolute;
+    top: -9px;
+    right: -9px;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: #ef4444;
+    color: #fff;
+    border: none;
+    cursor: pointer;
+    font-size: 11px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    padding: 0;
+    font-family: var(--mono);
+  }
+
+  /* RIGHT — sidebar */
+  .sidebar {
+    border-left: 1px solid var(--border);
+    background: var(--surface);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .sidebar-head {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .badge {
+    font-family: var(--mono);
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 10px;
+    background: var(--surface2);
+    color: var(--accent);
+    border: 1px solid var(--border);
+  }
+
+  .hotspot-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .hotspot-list::-webkit-scrollbar { width: 4px; }
+  .hotspot-list::-webkit-scrollbar-track { background: transparent; }
+  .hotspot-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  .hs-card {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+  }
+  .hs-card-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+  .hs-num-badge {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: #fff;
+    font-family: var(--mono);
+    font-size: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .hs-pos { flex: 1; color: var(--text-muted); font-size: 10px; }
+  .hs-del {
+    width: 20px;
+    height: 20px;
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    border-radius: 3px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    padding: 0;
+    transition: color 0.1s, background 0.1s;
+  }
+  .hs-del:hover { color: #ef4444; background: rgba(239,68,68,0.1); }
+
+  .hs-input {
+    font-family: var(--sans);
+    font-size: 12px;
+    padding: 6px 10px;
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text);
+    width: 100%;
+    transition: border-color 0.12s;
+  }
+  .hs-input:focus { outline: none; border-color: var(--accent); }
+  .hs-input::placeholder { color: var(--text-muted); }
+
+  .empty-state {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    color: var(--text-muted);
+    font-size: 13px;
+    padding: 32px;
+    text-align: center;
+  }
+  .empty-state svg { opacity: 0.3; }
+
+  .sidebar-footer {
+    padding: 16px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .generate-btn {
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    padding: 10px 16px;
+    border-radius: var(--radius);
+    border: 1px solid var(--accent);
+    background: var(--accent);
+    color: #fff;
+    cursor: pointer;
+    transition: opacity 0.12s;
+    width: 100%;
+    font-weight: 700;
+  }
+  .generate-btn:hover { opacity: 0.88; }
+
+  /* OUTPUT MODAL */
+  .modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.7);
+    z-index: 100;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+  .modal-overlay.show { display: flex; }
+
+  .modal {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    width: 100%;
+    max-width: 720px;
+    max-height: 85vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .modal-head {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .modal-title {
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+  .modal-actions { display: flex; gap: 8px; align-items: center; }
+  .modal-body { padding: 0; flex: 1; overflow-y: auto; }
+  pre#code-output {
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.7;
+    color: #c9d1d9;
+    padding: 20px 24px;
+    white-space: pre;
+    overflow-x: auto;
+    margin: 0;
+  }
+  /* syntax highlight */
+  .t-tag { color: #7dd3fc; }
+  .t-attr { color: #fca5a5; }
+  .t-val { color: #86efac; }
+  .t-cmt { color: #6b7280; font-style: italic; }
+
+  .copy-success {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: #4ade80;
+    display: none;
+    animation: fadeout 2s forwards;
+  }
+  @keyframes fadeout {
+    0%, 60% { opacity: 1; }
+    100% { opacity: 0; }
+  }
+
+  /* canvas indicator when no image */
+  .status-bar {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-muted);
+    letter-spacing: 0.03em;
+  }
+
+  /* responsive */
+  @media (max-width: 700px) {
+    .main { grid-template-columns: 1fr; grid-template-rows: 1fr auto; }
+    .sidebar { max-height: 40vh; border-left: none; border-top: 1px solid var(--border); }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div>
+      <div class="logo">Hotspot Maker</div>
+      <div class="logo-sub">Banner 熱區產生器 for Shopline</div>
+    </div>
+    <div class="divider-v"></div>
+    <div class="status-bar" id="status-bar">尚未載入圖片</div>
+  </header>
+
+  <div class="main">
+    <!-- LEFT -->
+    <div class="canvas-panel">
+      <div class="toolbar" id="toolbar" style="display:none;">
+        <button class="btn btn-icon active" id="draw-btn" onclick="setMode('draw')">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
+          框選模式
+        </button>
+        <button class="btn btn-icon ghost" onclick="clearAll()">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+          清除全部
+        </button>
+        <button class="btn btn-icon ghost" onclick="reloadImage()">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 4v6h6"/><path d="M23 20v-6h-6"/><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/></svg>
+          換圖
+        </button>
+      </div>
+
+      <div class="drop-zone" id="drop-zone" onclick="document.getElementById('file-input').click()">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+        <div class="drop-zone-title">點擊或拖曳上傳 Banner 圖片</div>
+        <div class="drop-zone-sub">支援 JPG、PNG、WebP、GIF</div>
+      </div>
+
+      <div class="canvas-wrap" id="canvas-wrap">
+        <img id="preview-img" src="" alt="banner">
+        <div id="draw-area"></div>
+      </div>
+    </div>
+
+    <!-- RIGHT -->
+    <div class="sidebar">
+      <div class="sidebar-head">
+        熱區清單
+        <span class="badge" id="count-badge">0</span>
+      </div>
+      <div class="hotspot-list" id="hotspot-list">
+        <div class="empty-state" id="empty-state">
+          <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M13 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>
+          上傳圖片後在上面拖拉框出區域，這裡會出現熱區設定
+        </div>
+      </div>
+      <div class="sidebar-footer">
+        <button class="generate-btn" onclick="generateCode()">產生 HTML 程式碼 →</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- OUTPUT MODAL -->
+<div class="modal-overlay" id="modal" onclick="closeModal(event)">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-head">
+      <div class="modal-title">輸出 HTML</div>
+      <div class="modal-actions">
+        <span class="copy-success" id="copy-success">已複製！</span>
+        <button class="btn" onclick="copyCode()">複製程式碼</button>
+        <button class="btn ghost" onclick="closeModal()">關閉</button>
+      </div>
+    </div>
+    <div class="modal-body">
+      <pre id="code-output"></pre>
+    </div>
+  </div>
+</div>
+
+<input type="file" id="file-input" accept="image/*" style="display:none">
+
+<script>
+let hotspots = [];
+let drawing = false;
+let startX = 0, startY = 0;
+let selEl = null;
+let mode = 'draw';
+
+const fileInput = document.getElementById('file-input');
+const dropZone = document.getElementById('drop-zone');
+const canvasWrap = document.getElementById('canvas-wrap');
+const drawArea = document.getElementById('draw-area');
+const previewImg = document.getElementById('preview-img');
+const toolbar = document.getElementById('toolbar');
+const statusBar = document.getElementById('status-bar');
+const emptyState = document.getElementById('empty-state');
+const countBadge = document.getElementById('count-badge');
+
+// drag-drop on drop zone
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('drag-over');
+  const f = e.dataTransfer.files[0];
+  if (f && f.type.startsWith('image/')) loadImage(f);
+});
+fileInput.addEventListener('change', e => { if (e.target.files[0]) loadImage(e.target.files[0]); });
+
+function loadImage(file) {
+  const reader = new FileReader();
+  reader.onload = ev => {
+    previewImg.src = ev.target.result;
+    previewImg.onload = () => {
+      dropZone.style.display = 'none';
+      canvasWrap.style.display = 'block';
+      toolbar.style.display = 'flex';
+      hotspots = [];
+      renderHotspots();
+      renderList();
+      statusBar.textContent = `${file.name}　${previewImg.naturalWidth} × ${previewImg.naturalHeight}px`;
+    };
+  };
+  reader.readAsDataURL(file);
+}
+
+function reloadImage() {
+  fileInput.click();
+}
+
+function setMode(m) {
+  mode = m;
+  document.getElementById('draw-btn').classList.toggle('active', m === 'draw');
+  drawArea.style.cursor = m === 'draw' ? 'crosshair' : 'default';
+}
+
+function getCoords(e) {
+  const r = canvasWrap.getBoundingClientRect();
+  const t = e.touches ? e.touches[0] : e;
+  return { x: t.clientX - r.left, y: t.clientY - r.top, w: r.width, h: r.height };
+}
+
+function startDraw(e) {
+  if (mode !== 'draw') return;
+  if (e.touches) e.preventDefault();
+  drawing = true;
+  const { x, y } = getCoords(e);
+  startX = x; startY = y;
+  selEl = document.createElement('div');
+  selEl.style.cssText = 'position:absolute;border:1.5px dashed #f97316;background:rgba(249,115,22,0.12);pointer-events:none;';
+  canvasWrap.appendChild(selEl);
+}
+
+function moveDraw(e) {
+  if (!drawing || !selEl) return;
+  if (e.touches) e.preventDefault();
+  const { x, y, w, h } = getCoords(e);
+  const l = Math.max(0, Math.min(x, startX));
+  const t = Math.max(0, Math.min(y, startY));
+  const bw = Math.min(Math.abs(x - startX), w - l);
+  const bh = Math.min(Math.abs(y - startY), h - t);
+  selEl.style.left = l + 'px';
+  selEl.style.top = t + 'px';
+  selEl.style.width = bw + 'px';
+  selEl.style.height = bh + 'px';
+}
+
+function endDraw(e) {
+  if (!drawing || !selEl) return;
+  drawing = false;
+  const { w, h } = getCoords(e.changedTouches ? { touches: e.changedTouches } : e);
+  const r = selEl.getBoundingClientRect();
+  const wr = canvasWrap.getBoundingClientRect();
+  const bw = r.width, bh = r.height;
+  const bl = r.left - wr.left, bt = r.top - wr.top;
+  canvasWrap.removeChild(selEl);
+  selEl = null;
+  if (bw < 5 || bh < 5) return;
+  hotspots.push({
+    id: Date.now(),
+    left: +((bl / wr.width) * 100).toFixed(2),
+    top: +((bt / wr.height) * 100).toFixed(2),
+    width: +((bw / wr.width) * 100).toFixed(2),
+    height: +((bh / wr.height) * 100).toFixed(2),
+    url: '',
+    label: '',
+    target: '_blank'
+  });
+  renderHotspots();
+  renderList();
+}
+
+drawArea.addEventListener('mousedown', startDraw);
+drawArea.addEventListener('mousemove', moveDraw);
+drawArea.addEventListener('mouseup', endDraw);
+drawArea.addEventListener('touchstart', startDraw, { passive: false });
+drawArea.addEventListener('touchmove', moveDraw, { passive: false });
+drawArea.addEventListener('touchend', endDraw);
+
+function renderHotspots() {
+  document.querySelectorAll('.hotspot').forEach(el => el.remove());
+  hotspots.forEach((hs, i) => {
+    const el = document.createElement('div');
+    el.className = 'hotspot';
+    el.style.left = hs.left + '%';
+    el.style.top = hs.top + '%';
+    el.style.width = hs.width + '%';
+    el.style.height = hs.height + '%';
+    el.innerHTML = `
+      <span class="hotspot-num">${hs.label || (i+1)}</span>
+      <button class="del-btn" onclick="removeHotspot(${hs.id})" title="刪除">×</button>
+    `;
+    drawArea.appendChild(el);
+  });
+  countBadge.textContent = hotspots.length;
+}
+
+function renderList() {
+  const list = document.getElementById('hotspot-list');
+  list.innerHTML = '';
+  if (hotspots.length === 0) {
+    list.appendChild(emptyState);
+    emptyState.style.display = 'flex';
+    return;
+  }
+  hotspots.forEach((hs, i) => {
+    const card = document.createElement('div');
+    card.className = 'hs-card';
+    card.innerHTML = `
+      <div class="hs-card-head">
+        <span class="hs-num-badge">${i+1}</span>
+        <span class="hs-pos">L:${hs.left}% T:${hs.top}% W:${hs.width}% H:${hs.height}%</span>
+        <button class="hs-del" onclick="removeHotspot(${hs.id})" title="刪除">×</button>
+      </div>
+      <input class="hs-input" type="text" placeholder="連結網址 https://..." value="${escHtml(hs.url)}"
+        oninput="updateField(${hs.id},'url',this.value)">
+      <input class="hs-input" type="text" placeholder="備註名稱（顯示在圖上，選填）" value="${escHtml(hs.label)}"
+        oninput="updateField(${hs.id},'label',this.value); renderHotspots();">
+    `;
+    list.appendChild(card);
+  });
+}
+
+function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
+
+function updateField(id, field, val) {
+  const hs = hotspots.find(h => h.id === id);
+  if (hs) hs[field] = val;
+}
+
+function removeHotspot(id) {
+  hotspots = hotspots.filter(h => h.id !== id);
+  renderHotspots();
+  renderList();
+}
+
+function clearAll() {
+  if (hotspots.length > 0 && !confirm('確定清除所有熱區？')) return;
+  hotspots = [];
+  renderHotspots();
+  renderList();
+}
+
+function generateCode() {
+  if (hotspots.length === 0) { alert('請先框選至少一個區域'); return; }
+  const src = previewImg.src.startsWith('data:') ? 'YOUR_IMAGE_URL_HERE' : previewImg.src;
+  const lines = hotspots.map((hs, i) => {
+    const url = hs.url || '#';
+    const cmt = hs.label ? ` <!-- ${hs.label} -->` : ` <!-- 區塊${i+1} -->`;
+    return `  <a href="${url}" target="_blank"\n     style="position:absolute; left:${hs.left}%; top:${hs.top}%; width:${hs.width}%; height:${hs.height}%;"></a>${cmt}`;
+  });
+  const code = `<div style="position:relative; width:100%; line-height:0;">\n\n  <img src="${src}"\n       style="width:100%; display:block;">\n\n${lines.join('\n\n')}\n\n</div>`;
+  document.getElementById('code-output').textContent = code;
+  document.getElementById('modal').classList.add('show');
+}
+
+function copyCode() {
+  const text = document.getElementById('code-output').textContent;
+  navigator.clipboard.writeText(text).then(() => {
+    const msg = document.getElementById('copy-success');
+    msg.style.display = 'inline';
+    msg.style.animation = 'none';
+    void msg.offsetWidth;
+    msg.style.animation = 'fadeout 2s forwards';
+    setTimeout(() => { msg.style.display = 'none'; }, 2200);
+  });
+}
+
+function closeModal(e) {
+  if (!e || e.target === document.getElementById('modal')) {
+    document.getElementById('modal').classList.remove('show');
+  }
+}
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+</script>
+</body>
+</html>
